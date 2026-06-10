@@ -71,7 +71,7 @@ DistilBERT (PyTorch + Transformers)
      ↓
 FastAPI (Real-time REST API)
      ↓
-Streamlit Dashboard (Monitoring)
+Interactive dashboard for sentiment insights and business analytics
      ↓
 MLflow (Tracking + Registry + Deployment)
 ```
