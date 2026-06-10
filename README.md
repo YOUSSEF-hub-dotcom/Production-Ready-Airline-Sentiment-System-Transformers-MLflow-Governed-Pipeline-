@@ -39,7 +39,7 @@ We built an **end-to-end sentiment analysis system** powered by DistilBERT that:
 
 * Classifies tweets into 3 sentiment classes
 * Detects critical complaints in real-time
-* Provides live monitoring dashboards
+* Provides live Dashboard for analytics & real-time insights
 * Enables competitor benchmarking
 
 ---
