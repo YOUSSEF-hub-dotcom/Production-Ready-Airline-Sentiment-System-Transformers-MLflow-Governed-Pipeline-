@@ -49,8 +49,3 @@ def run_text_preprocessing(df):
 
     return df
 
-
-    logger.info("===================>>> Text Preprocessing Completed Successfully!")
-
-
-    return df
