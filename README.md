@@ -1,6 +1,6 @@
 # ✈️ Airline Sentiment Analysis
 
-### Production-Grade NLP System | DistilBERT + MLOps(MLflow life Cycle)
+### Production-Grade NLP System | DistilBERT + MLflow life Cycle
 
 ---
 
