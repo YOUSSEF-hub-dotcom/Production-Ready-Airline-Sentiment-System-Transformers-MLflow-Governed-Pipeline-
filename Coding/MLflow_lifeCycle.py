@@ -1,14 +1,12 @@
-# mlflow.py
+import json
+import logging
 import mlflow
 import mlflow.pyfunc
-import json
-import torch
 import pandas as pd
-from sklearn.metrics import classification_report
-from mlflow.tracking import MlflowClient
+import torch
 from mlflow.models.signature import infer_signature
-
-import logging
+from mlflow.tracking import MlflowClient
+from sklearn.metrics import classification_report
 
 # Initialize logger for MLflow tracking
 logger = logging.getLogger("MLflow")
@@ -93,9 +91,10 @@ def run_mlflow_full_lifecycle(results):
                 texts = model_input["text"].tolist() if isinstance(model_input, pd.DataFrame) else model_input["text"]
                 logger.info(f"Inference requested for {len(model_input)} samples.")
 
-                # Tokenization and encoding
+                # REFACTOR: Aligned with the new model architecture by utilizing Dynamic Padding (padding=True) 
+                # inside the production PyFunc pipeline without forcing a fixed short sequence truncation.
                 enc = self.tokenizer(
-                    texts, padding=True, truncation=True, max_length=128, return_tensors="pt"
+                    texts, padding=True, truncation=True, max_length=512, return_tensors="pt"
                 ).to(self.device)
 
                 with torch.no_grad():
@@ -115,18 +114,19 @@ def run_mlflow_full_lifecycle(results):
         # Define input example for model signature inference
         input_example = pd.DataFrame({"text": ["The flight was delayed", "Excellent service!"]})
 
-        # Generate dummy outputs to infer the signature schema
+        # Generate dummy outputs to infer the signature schema using identical pipeline logic
         model.eval()
         with torch.no_grad():
             dummy_enc = tokenizer(input_example["text"].tolist(), padding=True, truncation=True,
-                                  return_tensors="pt").to(device)
+                                  max_length=512, return_tensors="pt").to(device)
             dummy_logits = model(**dummy_enc).logits
+            dummy_probs = torch.softmax(dummy_logits, dim=1)
             dummy_preds = dummy_logits.argmax(dim=1)
 
         label_map = {0: "negative", 1: "neutral", 2: "positive"}
         output_example = pd.DataFrame({
             "label": [label_map[p.item()] for p in dummy_preds],
-            "confidence": [0.99] * len(dummy_preds)  # Placeholder confidence
+            "confidence": [dummy_probs[i][dummy_preds[i]].item() for i in range(len(dummy_preds))]
         })
 
         signature = infer_signature(input_example, output_example)
@@ -138,7 +138,8 @@ def run_mlflow_full_lifecycle(results):
             artifacts={"model": model_path, "tokenizer": tokenizer_path},
             input_example=input_example,
             signature=signature,
-            pip_requirements=["torch", "transformers", "pandas", "numpy"]
+            # REFACTOR: Explicitly added core dependencies to guarantee reproducible deployment isolation
+            pip_requirements=["torch", "transformers", "pandas", "numpy", "scikit-learn"]
         )
 
     # MODEL REGISTRY: Register the logged model in the MLflow Model Registry
@@ -189,4 +190,3 @@ def run_mlflow_full_lifecycle(results):
     logger.info(f"{'═' * 50}")
 
     return run_id
-
