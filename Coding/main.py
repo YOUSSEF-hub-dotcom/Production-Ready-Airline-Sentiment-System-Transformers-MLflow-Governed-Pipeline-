@@ -1,4 +1,3 @@
-# main.py
 import argparse
 import logging
 import os
@@ -16,13 +15,15 @@ logger = logging.getLogger("MainOrchestrator")
 def main():
     """
     Orchestrates the Airline Sentiment Analysis Pipeline.
-    Steps: Data Ingestion -> Text Preprocessing -> EDA -> DistilBERT Training -> MLflow Registry.
+    Steps: Data Ingestion -> Text Preprocessing -> EDA -> DistilBERT Fine-Tuning -> MLflow Governance.
     """
     # --- PHASE 1: HYPERPARAMETER PARSING ---
     parser = argparse.ArgumentParser(description="Airline Sentiment Analysis Pipeline")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate for DistilBERT")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for training")
+    # REFACTOR: Added patience argument to control Early Stopping dynamically from the orchestrator
+    parser.add_argument("--patience", type=int, default=2, help="Patience epochs for Early Stopping callback")
     args = parser.parse_args()
 
     logger.info("=" * 70)
@@ -51,14 +52,15 @@ def main():
         # Generating visualizations and statistical reports
         df = run_eda_visualization(df)
 
-        # --- PHASE 5: TRANSFORMER MODELING (DistilBERT) ---
-        logger.info(f"\n>>> STEP 4: TRAINING DistilBERT (Epochs={args.epochs}, LR={args.lr})")
-        # Fine-tuning DistilBERT for multiclass sentiment classification
+        # --- PHASE 5: TRANSFORMER MODELING (DistilBERT Fine-Tuning) ---
+        logger.info(f"\n>>> STEP 4: FINE-TUNING DistilBERT (Epochs={args.epochs}, LR={args.lr}, Patience={args.patience})")
+        # Fine-tuning DistilBERT for multiclass sentiment classification with production features
         model_results = build_and_train_distilbert_model(
             df,
             epochs=args.epochs,
             lr=args.lr,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            patience=args.patience  # REFACTOR: Forwarding parsed patience dynamically
         )
 
         # --- PHASE 6: MLOPS GOVERNANCE (MLflow) ---
