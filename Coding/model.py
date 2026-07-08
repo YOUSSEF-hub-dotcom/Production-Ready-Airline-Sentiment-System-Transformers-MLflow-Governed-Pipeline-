@@ -1,21 +1,25 @@
-# model.py
-
+import logging
+import os
 import torch
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, Dataset
-from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification, get_linear_schedule_with_warmup
+from transformers import (
+    DistilBertTokenizerFast, 
+    DistilBertForSequenceClassification, 
+    get_linear_schedule_with_warmup,
+    DataCollatorWithPadding  # Added for dynamic batch-level padding
+)
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, f1_score
 from tqdm import tqdm
 import nlpaug.augmenter.word as naw
 import nltk
 import pandas as pd
-import logging
 
 logger = logging.getLogger("Model")
 
 
-# --- 1. Custom Dataset for Lazy Loading ---
+# --- 1. Custom Dataset for Lazy Loading (Without Fixed Padding) ---
 class AirlineDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len):
         self.texts = texts
@@ -26,17 +30,17 @@ class AirlineDataset(Dataset):
     def __len__(self):
         return len(self.texts)
 
-    # Implementation inside the Dataset class
     def __getitem__(self, item):
         text = str(self.texts[item])
         label = self.labels[item]
 
+        # Optimized: Set padding to False here to delegate it dynamically to the DataCollator
         encoding = self.tokenizer(
             text,
             add_special_tokens=True,
             max_length=self.max_len,
             return_token_type_ids=False,
-            padding='max_length',
+            padding=False,  
             truncation=True,
             return_attention_mask=True,
             return_tensors='pt',
@@ -49,21 +53,22 @@ class AirlineDataset(Dataset):
         }
 
 
-def build_and_train_distilbert_model(df, epochs, lr, batch_size):
+def build_and_train_distilbert_model(df, epochs, lr, batch_size, patience=2):
     logger.info("===========================>>>> Deep Learning (DistilBERT) Professional Pipeline")
 
     nltk.download(['averaged_perceptron_tagger', 'punkt', 'stopwords', 'wordnet', 'omw-1.4'], quiet=True)
     df['label'] = df['airline_sentiment'].map({'negative': 0, 'neutral': 1, 'positive': 2})
     df = df[['cleaned_text', 'label']].copy()
 
-    # --- 2. Split (Train, Val, Test) ---
+    # --- 2. Stratified Train, Val, Test Split ---
     train_df, temp_df = train_test_split(df, test_size=0.3, random_state=42, stratify=df['label'])
     val_df, test_df = train_test_split(temp_df, test_size=0.5, random_state=42, stratify=temp_df['label'])
 
-    # Augmentation (For training data only)
+    # --- 3. Synonym Augmentation for Class Balancing (Train Only) ---
     aug = naw.SynonymAug(aug_src='wordnet')
     max_count = train_df['label'].value_counts().max()
     augmented_texts, augmented_labels = [], []
+    
     for label in train_df['label'].unique():
         subset = train_df[train_df['label'] == label]
         augmented_texts.extend(subset['cleaned_text'].tolist())
@@ -72,7 +77,9 @@ def build_and_train_distilbert_model(df, epochs, lr, batch_size):
         if needed > 0:
             gen = set()
             while len(gen) < needed:
-                txt = aug.augment(subset.sample(1).iloc[0]['cleaned_text'])
+                # Utilizing fixed random seed offset for reproducible synonym generation
+                sampled_row = subset.sample(1, random_state=42 + len(gen))
+                txt = aug.augment(sampled_row.iloc[0]['cleaned_text'])
                 if isinstance(txt, list): txt = " ".join(txt)
                 gen.add(txt)
             augmented_texts.extend(list(gen))
@@ -83,37 +90,42 @@ def build_and_train_distilbert_model(df, epochs, lr, batch_size):
     MAX_LEN = 512
     tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
 
-    # Prepare DataLoaders using the Custom Dataset
+    # Instantiating the optimized custom datasets
     train_ds = AirlineDataset(balanced_train_df['text'].values, balanced_train_df['label'].values, tokenizer, MAX_LEN)
     val_ds = AirlineDataset(val_df['cleaned_text'].values, val_df['label'].values, tokenizer, MAX_LEN)
     test_ds = AirlineDataset(test_df['cleaned_text'].values, test_df['label'].values, tokenizer, MAX_LEN)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size)
-    test_loader = DataLoader(test_ds, batch_size=batch_size)
+    # Optimized: DataCollator handles padding dynamically up to the maximum length within each specific batch
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors="pt")
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=data_collator)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=data_collator)
+    test_loader = DataLoader(test_ds, batch_size=batch_size, collate_fn=data_collator)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = DistilBertForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=3).to(device)
 
-    # --- 3. Optimizer & Scheduler (Warmup) ---
-    # Class weights slightly adjusted because of Augmentation
-    weights = torch.tensor([1.0, 2.0, 1.5]).to(device)  
-    loss_fn = CrossEntropyLoss(weight=weights)
+    # Standard CrossEntropyLoss works optimally here since train data is fully balanced via augmentation
+    loss_fn = CrossEntropyLoss()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
 
     total_steps = len(train_loader) * epochs
-    num_warmup_steps = int(0.1 * total_steps)  # 10% Warmup
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps,
-                                                num_training_steps=total_steps)
+    num_warmup_steps = int(0.1 * total_steps)  # 10% Warmup steps
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=total_steps)
 
     progress_bar = tqdm(range(total_steps), desc="Training")
 
-    # --- Training Loop ---
+    # --- Callbacks Configuration: Variables tracking for Early Stopping & Checkpointing ---
+    best_val_f1 = 0.0
+    epochs_no_improve = 0
+    best_model_state = None
+
+    # --- Training Loop (Running up to 5 epochs based on main orchestrator configurations) ---
     for epoch in range(epochs):
         model.train()
         epoch_loss = 0
-        for i, batch in enumerate(train_loader):
+        for batch in train_loader:
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
@@ -129,27 +141,53 @@ def build_and_train_distilbert_model(df, epochs, lr, batch_size):
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
             optimizer.step()
-            scheduler.step()  # Update Learning Rate
+            scheduler.step()
 
             epoch_loss += loss.item()
             progress_bar.update(1)
 
         # Validation Step after each Epoch
         model.eval()
-        val_acc = 0
+        val_preds, val_labels = [], []
         with torch.no_grad():
             for batch in val_loader:
                 input_ids = batch['input_ids'].to(device)
                 attention_mask = batch['attention_mask'].to(device)
                 labels = batch['labels'].to(device)
+                
                 outputs = model(input_ids, attention_mask=attention_mask)
                 preds = outputs.logits.argmax(dim=1)
-                val_acc += (preds == labels).sum().item()
+                
+                val_preds.extend(preds.cpu().numpy())
+                val_labels.extend(labels.cpu().numpy())
 
-        logger.info(
-            f"Epoch {epoch + 1} | Val Acc: {val_acc / len(val_df):.4f} | Avg Loss: {epoch_loss / len(train_loader):.4f}")
+        # Monitoring Macro F1-Score to optimize the weak Neutral class performance balance
+        current_val_f1 = f1_score(val_labels, val_preds, average='macro')
+        current_val_acc = accuracy_score(val_labels, val_preds)
+        
+        logger.info(f"Epoch {epoch + 1} | Val Acc: {current_val_acc:.4f} | Val Macro F1: {current_val_f1:.4f} | Avg Loss: {epoch_loss / len(train_loader):.4f}")
+
+        # Early Stopping & Model Checkpointing Tracking Logic
+        if current_val_f1 > best_val_f1:
+            best_val_f1 = current_val_f1
+            epochs_no_improve = 0
+            best_model_state = model.state_dict().copy()  # Save checkpoint weights safely in memory
+            logger.info("--> Validation F1 Improved. Best Model Checkpointed!")
+        else:
+            epochs_no_improve += 1
+            logger.info(f"--> No improvement in Validation F1 for {epochs_no_improve} epoch(s).")
+
+        # Trigger Early Stopping callback if patience threshold is reached
+        if epochs_no_improve >= patience:
+            logger.info(f" Early stopping triggered at epoch {epoch + 1} due to no validation improvement.")
+            break
 
     progress_bar.close()
+
+    # Roll back to the absolute best checkpointed weights before testing phase
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+        logger.info("Loaded best checkpoint weights for final testing execution.")
 
     # --- Final Evaluation on Test Set ---
     logger.info("\nEvaluating on final test set...")
