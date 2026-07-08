@@ -1,20 +1,19 @@
+import logging
+import time
+from datetime import datetime, timezone
 import jwt
 import mlflow.pyfunc
 import pandas as pd
-from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, Text
+from sqlalchemy.orm import sessionmaker, declarative_base, Session  # REFACTOR: Modern declarative_base import
+
 from config import settings
-import time
-import logging
-from sqlalchemy.orm import Session
 
 # Logging Configuration
 logging.basicConfig(
@@ -31,7 +30,7 @@ logger.info("--- Starting Airline Sentiment API Service ---")
 try:
     engine = create_engine(settings.DATABASE_URL)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base = declarative_base()
+    Base = declarative_base()  # Modern stable approach
     logger.info("Database engine initialized successfully.")
 except Exception as e:
     logger.critical(f"Failed to initialize database engine: {e}")
@@ -43,7 +42,8 @@ class PredictionLog(Base):
     text = Column(Text)
     sentiment = Column(String(50))
     confidence = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # REFACTOR: Using timezone-aware UTC datetime for future-proofing and modern Python standards
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 # Create tables in the database
 try:
@@ -65,10 +65,10 @@ class PredictionResponse(BaseModel):
 logger.info(f"Attempting to load MLflow model from: {settings.MODEL_URI}")
 try:
     mlflow_model = mlflow.pyfunc.load_model(settings.MODEL_URI)
-    logger.info(" MLflow Model Loaded successfully.")
+    logger.info("🚀 MLflow Model Loaded successfully into API context.")
 except Exception as e:
     mlflow_model = None
-    logger.error(f" Model Load Error: {e}")
+    logger.error(f"❌ Model Load Error: {e}")
 
 # Database Dependency
 def get_db():
@@ -84,6 +84,7 @@ def get_smart_identifier(request: Request):
     if auth_header and auth_header.startswith("Bearer "):
         try:
             token = auth_header.split(" ")[1]
+            # Decode token safely without signature verification just to extract user metadata
             payload = jwt.decode(token, options={"verify_signature": False})
             user_id = payload.get("sub")
             if user_id:
@@ -133,7 +134,7 @@ async def predict(
         start_time = time.time()
         logger.info(f"Prediction started for text: {payload.text[:50]}...")
         
-        # Prepare input for MLflow model
+        # Prepare input for MLflow model (Perfect matching with PyFunc DataFrame expectation)
         df = pd.DataFrame({"text": [payload.text]})
         result_df = mlflow_model.predict(df)
 
@@ -143,7 +144,7 @@ async def predict(
 
         logger.info(f"Inference complete: Sentiment={sentiment}, Confidence={confidence:.2f}")
 
-        # Log to database as a background task to keep API responsive
+        # Log to database as a background task to keep API highly responsive under load
         background_tasks.add_task(db_log_prediction, payload.text, sentiment, confidence)
 
         return {
@@ -173,7 +174,7 @@ def db_log_prediction(text: str, sentiment: str, confidence: float):
 def get_predictions(db: Session = Depends(get_db)):
     logger.info("Fetching history logs from database.")
     try:
-        # Retrieve the latest 50 predictions
+        # Retrieve the latest 50 predictions to power dashboard view components
         logs = db.query(PredictionLog).order_by(PredictionLog.created_at.desc()).limit(50).all()
         return logs
     except Exception as e:
