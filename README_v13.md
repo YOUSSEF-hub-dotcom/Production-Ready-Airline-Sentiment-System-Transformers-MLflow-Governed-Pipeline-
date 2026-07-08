@@ -49,7 +49,7 @@ DistilBERT Sentiment Model
         ↓
 FastAPI Prediction Service
         ↓
-Streamlit Dashboard / Monitoring Layer
+Streamlit Dashboard 
         ↓
 MLflow Tracking + Model Registry
 ```
