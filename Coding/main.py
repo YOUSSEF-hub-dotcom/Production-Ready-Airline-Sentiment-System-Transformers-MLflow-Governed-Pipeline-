@@ -20,7 +20,7 @@ def main():
     """
     # --- PHASE 1: HYPERPARAMETER PARSING ---
     parser = argparse.ArgumentParser(description="Airline Sentiment Analysis Pipeline")
-    parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate for DistilBERT")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for training")
     args = parser.parse_args()
