@@ -278,7 +278,7 @@ The model is exposed through a production-grade **FastAPI-based prediction servi
 The platform provides a dual-dashboard interface to serve both real-time operational needs and deep analytical research:
 
 1. **Real-Time Prediction Interface (`app.py`):** An interactive UI that communicates directly with the FastAPI service. Unlike traditional dashboards that load empty, it features an **Automated Analytics Fetching** engine that dynamically pulls and renders historical global insights and prediction trends immediately upon page load.
-2. **Historical EDA Board (`sentiment_Dashbored.py`):** Rebuilt entirely using Streamlit’s modern native `st.tabs` component instead of slow sidebar selectboxes. It provides swift navigation across word clouds, behavioral charts, and critical temporal/hourly metrics without triggering full-page UI re-renders.
+2. **Historical EDA Board (`sentiment_dashboard.py`):** Rebuilt entirely using Streamlit’s modern native `st.tabs` component instead of slow sidebar selectboxes. It provides swift navigation across word clouds, behavioral charts, and critical temporal/hourly metrics without triggering full-page UI re-renders.
 
 ---
 
