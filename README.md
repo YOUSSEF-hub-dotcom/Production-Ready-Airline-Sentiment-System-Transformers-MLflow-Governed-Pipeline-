@@ -73,7 +73,7 @@ Model Registry + Quality Gate
       ↓
 FastAPI Deployment
       ↓
-Streamlit Dashboard & Business Monitoring
+Streamlit Dashboard & Business Insight
 ```
 
 ---
