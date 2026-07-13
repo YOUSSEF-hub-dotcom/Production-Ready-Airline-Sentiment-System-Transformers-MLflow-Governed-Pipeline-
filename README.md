@@ -266,7 +266,7 @@ It demonstrates how an NLP model can be managed through a **repeatable ML lifecy
 The model is exposed through a production-grade **FastAPI-based prediction service** built with resilience, speed, and security patterns in mind.
 
 ### Advanced Production Features Implemented:
-* **Asynchronous Background Database Logging:** To maintain an ultra-fast response time, the API utilizes FastAPI's `BackgroundTasks` to log incoming tweets and predictions into the SQLite/PostgreSQL database via SQLAlchemy. This unblocks the prediction loop, allowing the client to receive the `0.08s` inference response instantly without waiting for database I/O operations.
+* **Asynchronous Background Database Logging:** To maintain an ultra-fast response time, the API utilizes FastAPI's `BackgroundTasks` to log incoming tweets and predictions into the SQLite/SQL Server database via SQLAlchemy. This unblocks the prediction loop, allowing the client to receive the `0.08s` inference response instantly without waiting for database I/O operations.
 * **Rate Limiting Protection:** Integrated `SlowAPI` middleware to enforce a strict rate limit of `10 requests per minute` per client, mitigating server resource exhaustion and potential DoS vectors.
 * **Smart Identity Resolution:** The rate limiter utilizes a dynamic identifier that securely decodes JWT (JSON Web Tokens) to track authenticated users by their `sub` claim, gracefully falling back to the client's remote IP address for anonymous traffic.
 * **Automated Processing Metrics:** Custom HTTP middleware injects an `X-Process-Time` performance metric into the response headers for real-time latency monitoring.
