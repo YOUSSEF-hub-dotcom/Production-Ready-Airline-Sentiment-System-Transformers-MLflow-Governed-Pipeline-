@@ -4,6 +4,7 @@ import mlflow
 import mlflow.pyfunc
 import pandas as pd
 import torch
+import pickle  # Added for SHAP values serialization
 from mlflow.models.signature import infer_signature
 from mlflow.tracking import MlflowClient
 from sklearn.metrics import classification_report
@@ -72,6 +73,15 @@ def run_mlflow_full_lifecycle(results):
             json.dump(report, f, indent=4)
 
         mlflow.log_artifact("classification_report.json")
+
+        # --- SHAP INTEGRATION: Log computed SHAP values as an MLflow run artifact ---
+        if "shap_values" in results and results["shap_values"] is not None:
+            logger.info("Serializing and logging SHAP values artifact...")
+            shap_path = "shap_values.pkl"
+            with open(shap_path, "wb") as f:
+                pickle.dump(results["shap_values"], f)
+            mlflow.log_artifact(shap_path)
+            logger.info("SHAP values successfully logged to MLflow artifacts!")
 
         # PYFUNC MODEL & SIGNATURE: Define a custom Python model wrapper for inference
         class DistilBertPyFunc(mlflow.pyfunc.PythonModel):
@@ -166,7 +176,7 @@ def run_mlflow_full_lifecycle(results):
     MIN_MACRO_F1 = 0.70
 
     current_macro_f1 = report["macro avg"]["f1-score"]
-    status = "Staging  (Low Performance)"
+    status = "Staging (Low Performance)"
 
     # Transition to Production only if accuracy and F1-score criteria are met
     if test_accuracy >= MIN_ACCURACY and current_macro_f1 >= MIN_MACRO_F1:
@@ -178,9 +188,9 @@ def run_mlflow_full_lifecycle(results):
         )
         logger.info(f"Model Promoted! Acc: {test_accuracy:.2f}, F1: {current_macro_f1:.2f}")
 
-        status = "Production "
+        status = "Production"
     else:
-        logger.warning(f" Gate Failed! Required Acc > {MIN_ACCURACY}, got {test_accuracy:.2f}")
+        logger.warning(f"Gate Failed! Required Acc > {MIN_ACCURACY}, got {test_accuracy:.2f}")
 
     # Log the final summary of the model registration process
     logger.info(f"\n{'═' * 50}")
