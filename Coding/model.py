@@ -7,7 +7,8 @@ from transformers import (
     DistilBertTokenizerFast, 
     DistilBertForSequenceClassification, 
     get_linear_schedule_with_warmup,
-    DataCollatorWithPadding  # Added for dynamic batch-level padding
+    DataCollatorWithPadding,  # Added for dynamic batch-level padding
+    pipeline                  # Added to create a seamless Hugging Face pipeline for SHAP
 )
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, f1_score
@@ -15,6 +16,7 @@ from tqdm import tqdm
 import nlpaug.augmenter.word as naw
 import nltk
 import pandas as pd
+import shap                    # Added for model interpretability
 
 logger = logging.getLogger("Model")
 
@@ -51,6 +53,38 @@ class AirlineDataset(Dataset):
             'attention_mask': encoding['attention_mask'].flatten(),
             'labels': torch.tensor(label, dtype=torch.long)
         }
+
+
+def explain_predictions_with_shap(model, tokenizer, texts, device):
+    """
+    Computes and logs SHAP values for NLP text classification using Hugging Face pipelines.
+    Explains which words pushed the sentiment prediction towards Negative, Neutral, or Positive.
+    """
+    logger.info("===========================>>>> Executing SHAP Text Interpretability Engine")
+    
+    # 1. Create a standard Hugging Face sentiment pipeline linked to our trained model
+    # SHAP exploits the pipeline structure to safely map tokens back to original string characters
+    nlp_pipeline = pipeline(
+        "text-classification",
+        model=model,
+        tokenizer=tokenizer,
+        device=0 if device.type == 'cuda' else -1,
+        return_all_scores=True  # Required for SHAP to compute values across all 3 classes (Neg, Neu, Pos)
+    )
+
+    # 2. Instantiate the SHAP Explainer specialized for natural language text structures
+    explainer = shap.Explainer(nlp_pipeline)
+
+    # 3. Compute SHAP values on a subset of texts to explain (SHAP can be computationally heavy)
+    logger.info(f"Computing SHAP values for {len(texts)} sample flights...")
+    shap_values = explainer(texts)
+
+    # Note: Plt / Visual inspection code for Jupyter notebook visualization:
+    # To view the impact of words on the target classes, run locally:
+    # shap.plots.text(shap_values[0])  # Displays interactive visualization for the first sample text
+    
+    logger.info("SHAP computation completed successfully. Interactive text plots are ready for deployment.")
+    return shap_values
 
 
 def build_and_train_distilbert_model(df, epochs, lr, batch_size, patience=2):
@@ -212,8 +246,14 @@ def build_and_train_distilbert_model(df, epochs, lr, batch_size, patience=2):
     logger.info(f"Final Test Accuracy: {accuracy:.4f}")
     logger.info("\nClassification Report:\n" + report)
 
+    # --- SHAP Explanations Trigger Block ---
+    # We pass a diverse sample of raw texts to explain our model's decision-making pattern
+    sample_texts_to_explain = test_df['cleaned_text'].head(5).tolist()
+    shap_values = explain_predictions_with_shap(model, tokenizer, sample_texts_to_explain, device)
+
     return {
         'model': model, 'tokenizer': tokenizer, 'test_accuracy': accuracy,
         'test_predictions': all_preds, 'test_labels': all_labels,
-        'device': device, 'params': {'epochs': epochs, 'lr': lr, 'batch_size': batch_size}
+        'device': device, 'shap_values': shap_values, 
+        'params': {'epochs': epochs, 'lr': lr, 'batch_size': batch_size}
     }
