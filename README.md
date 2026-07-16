@@ -140,6 +140,51 @@ DistilBERT was selected because it provides a strong trade-off between **accurac
 * suitable for fine-tuning on domain-specific tweet data without extreme compute cost
 
 ---
+---
+
+## 🔍 Model Interpretability with SHAP (Explainable AI)
+
+To ensure the platform is not treated as a predictive "black box" and to provide actionable insights for airline support teams, the system integrates **SHAP (SHapley Additive exPlanations)** for model interpretability.
+
+Rather than only predicting whether a tweet is **Positive**, **Neutral**, or **Negative**, SHAP explains **which individual words contributed most** to the model's decision, making the predictions transparent and business actionable.
+
+### Why SHAP for Airline Sentiment?
+
+* **Root Cause Analysis:** Customer support teams can immediately identify the specific words responsible for negative sentiment, such as `delayed`, `cancelled`, `lost`, or `rude`, accelerating issue diagnosis.
+* **Word-Level Feature Attribution:** SHAP computes the mathematical contribution (Shapley value) of every token toward the predicted probability of each sentiment class.
+* **Enterprise Trust:** Adds an explainability layer that increases confidence in automated decisions before triggering customer support workflows, alerts, or escalation pipelines.
+* **Model Auditing:** Enables Data Scientists to diagnose incorrect predictions and better understand model behavior during error analysis.
+
+### Explainability Pipeline
+
+```text
+Fine-Tuned DistilBERT
+          ↓
+ Hugging Face Pipeline
+          ↓
+   SHAP Text Explainer
+          ↓
+ Token-Level Attribution Scores
+          ↓
+Word Importance Visualization
+          ↓
+MLflow Artifact Logging
+```
+
+### MLflow Integration
+
+After training, the production DistilBERT checkpoint is wrapped inside a Hugging Face inference pipeline and passed to a dedicated **SHAP Text Explainer**.
+
+The generated explanations are serialized as:
+
+```text
+shap_values.pkl
+```
+
+and automatically logged to **MLflow** together with the trained model, ensuring that prediction explanations remain reproducible across model versions.
+
+
+---
 
 ## ⚙️ Training Configuration & Version 13 Updates
 
@@ -147,16 +192,18 @@ DistilBERT was selected because it provides a strong trade-off between **accurac
 **Version 13 (Production-Ready)**
 
 ### Key Improvements Introduced in Version 13
-Version 13 focused on optimizing training stability, significantly reducing inference latency, and eliminating deployment bottlenecks.
 
-#### Improvements:
-* **Dynamic Padding Integration:** Instead of forcing a static `max_sequence_length=512` for all short tweets, the tokenization pipeline now dynamically pads sequences to the maximum length of the current batch. This fundamentally optimized memory utilization and accelerated training/inference throughput.
+Version 13 focused on improving training stability, reducing inference latency, enhancing model transparency, and eliminating deployment bottlenecks.
+
+#### Improvements
+
+* **Dynamic Padding Integration:** Instead of forcing a static `max_sequence_length=512` for all short tweets, the tokenization pipeline dynamically pads each batch to its maximum sequence length, significantly improving memory efficiency and inference throughput.
 * **Lazy-loading dataset pipeline** to reduce memory overhead during training.
 * **Linear warmup scheduler** for more stable optimization.
-* **Gradient clipping** to avoid unstable gradient updates.
-* **Train / Validation / Test split** to eliminate leakage.
-* **Hybrid imbalance handling** using augmentation + class-weighted loss.
-
+* **Gradient clipping** to prevent unstable gradient updates.
+* **Train / Validation / Test split** to eliminate data leakage.
+* **Hybrid imbalance handling** using synonym-based augmentation together with class-weighted loss.
+* **SHAP Explainability Integration:** Added a SHAP Text Explainer to generate token-level attribution scores, enabling transparent interpretation of DistilBERT predictions. Generated SHAP explanations are serialized and logged as MLflow artifacts, providing reproducible model diagnostics and explainability across production model versions.
 ---
 
 ## 📊 Final Model Performance
@@ -169,7 +216,14 @@ With the introduction of **Dynamic Padding** and optimized hyperparameter tuning
 | **Macro F1** | **0.81** |
 | **Weighted F1** | **0.86** |
 | **Inference Latency** | **~0.08s** |
+| **Interpretability** | **SHAP Text Explainer** |
 | **Dataset Size** | **14,604 tweets** |
+
+### Explainable Diagnostics
+
+The production pipeline also integrates **SHAP-based explainability**, allowing support supervisors and ML engineers to inspect the word-level contribution behind every prediction.
+
+Instead of reviewing only the predicted sentiment label, teams can understand *why* the model reached its decision, making automated sentiment classification significantly more transparent, auditable, and actionable.
 
 ### Class-wise Performance
 
@@ -282,18 +336,16 @@ The platform provides a dual-dashboard interface to serve both real-time operati
 
 ---
 
-## 🛠️ Tech Stack
-
-| Layer           | Technology                 | Purpose                                  |
+| Layer | Technology | Purpose |
 | --------------- | -------------------------- | ---------------------------------------- |
-| NLP Model       | **DistilBERT**             | Tweet sentiment classification           |
-| Training        | **PyTorch + Transformers** | Fine-tuning and inference                |
-| NLP Utilities   | **NLTK**                   | augmentation / preprocessing support     |
-| MLOps           | **MLflow**                 | tracking, registry, lifecycle management |
-| API             | **FastAPI**                | real-time inference service              |
-| Frontend        | **Streamlit**              | interactive monitoring dashboard         |
-| Data / Analysis | **Pandas, NumPy**          | data handling and analysis               |
-
+| NLP Model | **DistilBERT** | Tweet sentiment classification |
+| Training | **PyTorch + Transformers** | Fine-tuning and inference |
+| Explainability (XAI) | **SHAP** | Word-level model prediction explanations |
+| NLP Utilities | **NLTK** | augmentation / preprocessing support |
+| MLOps | **MLflow** | tracking, registry, lifecycle management |
+| API | **FastAPI** | real-time inference service |
+| Frontend | **Streamlit** | interactive monitoring dashboard |
+| Data / Analysis | **Pandas, NumPy** | data handling and analysis |
 ---
 
 ## 📁 Project Structure
@@ -339,19 +391,19 @@ streamlit run app.py
 
 ## 📌 Why This Project Is Strong as a Portfolio Project
 
-This repository demonstrates more than a sentiment classifier. It combines:
+This repository demonstrates much more than a traditional sentiment classifier. It combines multiple disciplines into a single production-oriented NLP platform:
 
-* **transformer-based NLP modeling**
-* **short-text sentiment classification**
-* **class imbalance handling**
-* **training optimization and evaluation**
+* **Transformer-based NLP modeling**
+* **Short-text sentiment classification**
+* **Class imbalance handling**
+* **Training optimization and evaluation**
+* **Explainable AI (SHAP) for word-level prediction interpretation**
 * **MLflow-based model lifecycle management**
 * **FastAPI deployment**
 * **Streamlit-based business-facing analytics**
-* **insight extraction from unstructured customer feedback**
+* **Insight extraction from unstructured customer feedback**
 
-In other words, it shows how a transformer model can be turned into a **deployable, end-to-end applied NLP system**.
-
+In other words, it demonstrates how a modern transformer model can be transformed into a **deployable, explainable, end-to-end NLP system** capable of supporting real-world customer experience monitoring and operational decision-making.
 ---
 
 ## 🌱 Future Improvements
